@@ -1,0 +1,676 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Realtime Logs</title>
+  <style>
+    :root{
+      --bg: #f6f7fb;
+      --panel: #ffffff;
+      --text: #0f1724;
+      --muted: #6b7280;
+      --accent: #2563eb;
+
+      --info: #0ea5e9;
+      --warn: #f59e0b;
+      --err:  #ef4444;
+
+      --header-h: 64px;
+      --stats-h: 84px; /* used for sticky offsets */
+
+      --shadow: 0 6px 18px rgba(2,6,23,0.06);
+      --shadow-soft: 0 4px 12px rgba(2,6,23,0.04);
+      --border: rgba(0,0,0,0.08);
+      --radius: 12px;
+    }
+
+    .dark{
+      --bg: #0b1220;
+      --panel: #0f1724;
+      --text: #e6eef8;
+      --muted: #9ca3af;
+      --accent: #60a5fa;
+
+      --info: #38bdf8;
+      --warn: #fbbf24;
+      --err:  #fb7185;
+
+      --border: rgba(255,255,255,0.10);
+      --shadow: 0 10px 24px rgba(0,0,0,0.35);
+      --shadow-soft: 0 6px 16px rgba(0,0,0,0.22);
+    }
+
+    *{box-sizing:border-box}
+    html,body{
+      height:100%;
+      margin:0;
+      font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Arial;
+      background:var(--bg);
+      color:var(--text);
+      transition: background 220ms, color 220ms;
+    }
+
+    .app{
+      max-width:1200px;
+      margin:0 auto;
+      padding:12px;
+      display:grid;
+      grid-template-rows: var(--header-h) auto 1fr;
+      gap:12px;
+    }
+
+    header.app-header{
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: color-mix(in srgb, var(--panel) 92%, transparent);
+      backdrop-filter: blur(10px);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding:12px 16px;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+    }
+
+    .title{font-weight:800;font-size:18px; letter-spacing:0.2px}
+    .controls{display:flex;align-items:center;gap:10px; flex-wrap:wrap}
+
+    button{
+      background:transparent;
+      border:1px solid var(--border);
+      padding:8px 12px;
+      border-radius:10px;
+      cursor:pointer;
+      color:var(--text);
+      transition: transform 120ms, box-shadow 120ms, background 120ms;
+    }
+    button:hover{ transform: translateY(-1px); box-shadow: var(--shadow-soft); }
+    button:active{ transform: translateY(0px); box-shadow: none; }
+
+    .primary{
+      background: linear-gradient(90deg, var(--accent), #4f46e5);
+      color:white;
+      border:none;
+    }
+
+    .pill{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      padding:8px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: color-mix(in srgb, var(--panel) 90%, transparent);
+    }
+    .muted{color:var(--muted); font-size:12px}
+
+    .statbar{
+      display:grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap:12px;
+    }
+    .stat{
+      background:var(--panel);
+      padding:12px 14px;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-soft);
+      border: 1px solid var(--border);
+      min-height: 72px;
+    }
+    .stat .num{font-size:18px;font-weight:800}
+
+    .layout{
+      display:grid;
+      grid-template-columns: 420px 1fr;
+      gap:14px;
+      align-items:start;
+    }
+
+    .panel{
+      background:var(--panel);
+      padding:12px;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-soft);
+      border: 1px solid var(--border);
+      min-height: 140px;
+    }
+
+    /* Filters: sticky INSIDE left panel */
+    .filters{
+      position: sticky;
+      top: calc(var(--header-h) + var(--stats-h) + 12px);
+      z-index: 40;
+
+      background: var(--panel);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-soft);
+      border-radius: var(--radius);
+
+      padding: 10px;
+      display:flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    input[type=search]{
+      flex: 1 1 200px;
+      min-width: 180px;
+      padding: 9px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text);
+      outline: none;
+    }
+
+    .levels{
+      display:flex;
+      gap:6px;
+      flex-wrap: wrap;
+    }
+
+    .level-btn{
+      padding: 7px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      background: transparent;
+      font-weight: 600;
+      font-size: 12px;
+    }
+
+    .level-btn.active{
+      outline: 2px solid color-mix(in srgb, var(--accent) 20%, transparent);
+      border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+      background: color-mix(in srgb, var(--accent) 10%, transparent);
+    }
+
+    #jump{white-space: nowrap;}
+
+    .section-title{
+      margin: 10px 0 8px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    /* Log list */
+    .log-list{
+      height: 64vh;
+      overflow: auto;
+      padding: 8px 6px;
+      display: flex;
+      flex-direction: column; /* newest at top via prepend() */
+      gap: 8px;
+      border-radius: var(--radius);
+    }
+
+    .log-card{
+      display:flex;
+      gap: 10px;
+      padding: 10px;
+      border-radius: 12px;
+      border: 1px solid transparent;
+      background: color-mix(in srgb, var(--panel) 94%, transparent);
+      transition: transform 140ms, box-shadow 140ms, background 140ms, border 140ms;
+      cursor: pointer;
+    }
+
+    .log-card:hover{
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-soft);
+      border-color: color-mix(in srgb, var(--border) 70%, transparent);
+    }
+
+    .log-card.selected{
+      border-left: 4px solid var(--accent);
+      border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+      background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+    }
+
+    .timestamp{
+      width: 96px;
+      color: var(--muted);
+      font-size: 12px;
+      flex: 0 0 auto;
+      padding-top: 2px;
+    }
+
+    .log-meta{display:flex; gap:8px; align-items:center; flex-wrap:wrap}
+    .level-badge{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-weight: 800;
+      font-size: 12px;
+      border: 1px solid var(--border);
+    }
+
+    .level-dot{
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      display:inline-block;
+    }
+
+    /* FIXED selectors */
+    .level-badge.INFO{ background: color-mix(in srgb, var(--info) 22%, transparent); }
+    .level-badge.INFO .level-dot{ background: var(--info); }
+    .level-badge.WARN{ background: color-mix(in srgb, var(--warn) 22%, transparent); }
+    .level-badge.WARN .level-dot{ background: var(--warn); }
+    .level-badge.ERROR{ background: color-mix(in srgb, var(--err) 22%, transparent); }
+    .level-badge.ERROR .level-dot{ background: var(--err); }
+
+    .service{
+      padding: 5px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--muted);
+      background: color-mix(in srgb, var(--panel) 92%, transparent);
+    }
+
+    .message{
+      margin-top: 6px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: var(--text);
+      line-height: 1.25rem;
+      word-break: break-word;
+    }
+
+    .log-actions{
+      margin-left: auto;
+      opacity: 0;
+      transition: opacity 120ms;
+      display:flex;
+      align-items:center;
+      gap:8px;
+    }
+    .log-card:hover .log-actions{opacity:1}
+
+    .copy-btn{
+      padding: 6px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: transparent;
+      font-size: 12px;
+    }
+
+    .empty{
+      padding: 18px;
+      text-align:center;
+      color: var(--muted);
+      border: 1px dashed color-mix(in srgb, var(--border) 85%, transparent);
+      border-radius: var(--radius);
+      margin-top: 10px;
+    }
+
+    .footer{
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    /* Right panel sticky */
+    .sticky-right{
+      position: sticky;
+      top: calc(var(--header-h) + var(--stats-h) + 12px);
+    }
+
+    pre{
+      margin:0;
+      padding: 10px;
+      background: color-mix(in srgb, var(--panel) 92%, transparent);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow:auto;
+      min-height: 56vh;
+      font-size: 12px;
+      line-height: 1.35rem;
+    }
+
+    @media (max-width: 980px){
+      .layout{ grid-template-columns: 1fr; }
+      .timestamp{ display:none; }
+      pre{ min-height: 320px; }
+      .sticky-right{ position: static; }
+      .filters{ position: static; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="app-header">
+      <div class="title">Realtime Logs</div>
+      <div class="controls">
+        <button id="gen20" class="primary">Generate 20</button>
+        <button id="gen200">Generate 200</button>
+        <button id="export">Export visible logs</button>
+        <button id="clear">Clear</button>
+        <button id="pause">Pause</button>
+
+        <label class="pill">
+          <input type="checkbox" id="darkToggle" />
+          <span class="muted">Dark</span>
+        </label>
+      </div>
+    </header>
+
+    <div class="statbar">
+      <div class="stat">
+        <div class="muted">Total received</div>
+        <div id="total" class="num">0</div>
+      </div>
+      <div class="stat">
+        <div class="muted">Events / sec (10s)</div>
+        <div id="eps" class="num">0.0</div>
+      </div>
+      <div class="stat">
+        <div class="muted">Last event</div>
+        <div id="last" class="num">—</div>
+      </div>
+    </div>
+
+    <div class="layout">
+      <!-- Left: feed -->
+      <div class="panel">
+        <div class="filters" id="filterRow">
+          <input id="search" type="search" placeholder="Search message or service" />
+
+          <div class="levels">
+            <button class="level-btn active" data-level="ALL">All</button>
+            <button class="level-btn" data-level="INFO">INFO</button>
+            <button class="level-btn" data-level="WARN">WARN</button>
+            <button class="level-btn" data-level="ERROR">ERROR</button>
+          </div>
+
+          <label class="pill" style="margin-left:auto">
+            <input type="checkbox" id="autoscroll" checked />
+            <span class="muted">Auto-scroll</span>
+          </label>
+
+          <button id="jump">Jump to latest</button>
+        </div>
+
+        <div class="section-title">Live stream</div>
+        <div id="logs" class="log-list" aria-live="polite"></div>
+
+        <div id="emptyState" class="empty">No logs yet — click Generate</div>
+        <div id="noResults" class="empty" style="display:none">No results match your filter</div>
+        <div class="footer">Showing newest on top. Kept in-memory: last 500.</div>
+      </div>
+
+      <!-- Right: details -->
+      <div class="panel sticky-right">
+        <div class="section-title">Details</div>
+        <pre id="detailPane">No event selected</pre>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // state
+    const MAX_LOGS = 500;
+    let logs = []; // newest first
+    let totalReceived = 0;
+    let paused = false;
+    let es = null;
+    const timestamps = []; // ms timestamps of received events (keeps last 10s)
+    let selectedId = null;
+
+    // elements
+    const totalEl = document.getElementById('total');
+    const epsEl = document.getElementById('eps');
+    const lastEl = document.getElementById('last');
+    const logsEl = document.getElementById('logs');
+
+    const gen20 = document.getElementById('gen20');
+    const gen200 = document.getElementById('gen200');
+    const exportBtn = document.getElementById('export');
+    const clearBtn = document.getElementById('clear');
+    const pauseBtn = document.getElementById('pause');
+
+    const darkToggle = document.getElementById('darkToggle');
+    const searchInput = document.getElementById('search');
+    const levelBtns = document.querySelectorAll('.level-btn');
+
+    const emptyState = document.getElementById('emptyState');
+    const noResults = document.getElementById('noResults');
+
+    const autoscroll = document.getElementById('autoscroll');
+    const jumpBtn = document.getElementById('jump');
+    const detailPane = document.getElementById('detailPane');
+
+    let activeLevel = 'ALL';
+
+    function formatTime(ts){ return new Date(ts).toLocaleTimeString(); }
+
+    function renderLogCard(ev){
+      const wrap = document.createElement('div');
+      wrap.className = 'log-card';
+      wrap.dataset.id = ev.id || '';
+      if(selectedId === ev.id) wrap.classList.add('selected');
+
+      const time = document.createElement('div');
+      time.className = 'timestamp';
+      time.textContent = formatTime(ev.timestamp);
+
+      const meta = document.createElement('div');
+      meta.style.flex = '1';
+
+      const top = document.createElement('div');
+      top.className = 'log-meta';
+
+      const lvl = (ev.level || 'INFO').toUpperCase();
+      const level = document.createElement('div');
+      level.className = 'level-badge ' + lvl;
+
+      const dot = document.createElement('span');
+      dot.className = 'level-dot';
+
+      const label = document.createElement('span');
+      label.textContent = lvl;
+
+      level.appendChild(dot);
+      level.appendChild(label);
+
+      const svc = document.createElement('div');
+      svc.className = 'service';
+      svc.textContent = ev.service || 'service';
+
+      top.appendChild(level);
+      top.appendChild(svc);
+
+      const msg = document.createElement('div');
+      msg.className = 'message';
+      msg.textContent = ev.message || '';
+
+      meta.appendChild(top);
+      meta.appendChild(msg);
+
+      const actions = document.createElement('div');
+      actions.className = 'log-actions';
+
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'copy-btn';
+      copyBtn.textContent = 'Copy JSON';
+      copyBtn.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        navigator.clipboard.writeText(JSON.stringify(ev, null, 2));
+      });
+      actions.appendChild(copyBtn);
+
+      wrap.appendChild(time);
+      wrap.appendChild(meta);
+      wrap.appendChild(actions);
+
+      wrap.addEventListener('click', ()=>{
+        selectedId = ev.id;
+        detailPane.textContent = JSON.stringify(ev, null, 2);
+        document.querySelectorAll('.log-card').forEach(n=>{
+          n.classList.toggle('selected', n.dataset.id === selectedId);
+        });
+      });
+
+      return wrap;
+    }
+
+    function matchesFilter(ev){
+      const q = (searchInput.value || '').toLowerCase();
+      const lvl = (ev.level || 'INFO').toUpperCase();
+
+      if(activeLevel !== 'ALL' && lvl !== activeLevel) return false;
+      if(!q) return true;
+
+      return (ev.message || '').toLowerCase().includes(q) ||
+             (ev.service || '').toLowerCase().includes(q);
+    }
+
+    function refreshList(){
+      logsEl.innerHTML = '';
+      let shown = 0;
+
+      for(const ev of logs){
+        if(!matchesFilter(ev)) continue;
+        logsEl.appendChild(renderLogCard(ev));
+        shown++;
+      }
+
+      emptyState.style.display = logs.length ? 'none' : 'block';
+      noResults.style.display = (logs.length && shown === 0) ? 'block' : 'none';
+    }
+
+    function pushEvent(ev){
+      totalReceived += 1;
+      totalEl.textContent = totalReceived;
+
+      const ts = typeof ev.timestamp === 'number' ? ev.timestamp : Date.now();
+      lastEl.textContent = formatTime(ts);
+
+      const now = Date.now();
+      timestamps.push(now);
+      while(timestamps.length && (now - timestamps[0]) > 10000) timestamps.shift();
+
+      logs.unshift({...ev, timestamp: ts});
+      if(logs.length > MAX_LOGS) logs.pop();
+
+      // Re-render if filter could hide/show
+      refreshList();
+
+      if(autoscroll.checked){
+        logsEl.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    }
+
+    // SSE
+    function startStream(){
+      if(es) return;
+      es = new EventSource('/stream');
+
+      es.onmessage = (m)=>{
+        try{
+          const ev = JSON.parse(m.data);
+          pushEvent(ev);
+        }catch(e){
+          console.warn('bad SSE data', e);
+        }
+      };
+
+      es.onerror = (e)=>{
+        console.warn('SSE error', e);
+      };
+
+      pauseBtn.textContent = 'Pause';
+      paused = false;
+    }
+
+    function stopStream(){
+      if(!es) return;
+      try{ es.close(); }catch(e){}
+      es = null;
+      pauseBtn.textContent = 'Resume';
+      paused = true;
+    }
+
+    // actions
+    gen20.addEventListener('click', ()=>{
+      fetch('/generate', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({count:20})
+      });
+    });
+
+    gen200.addEventListener('click', ()=>{
+      fetch('/generate', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({count:200})
+      });
+    });
+
+    exportBtn.addEventListener('click', ()=>{
+      const visible = logs.filter(matchesFilter);
+      const blob = new Blob([JSON.stringify(visible, null, 2)], {type:'application/json'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'logs.json';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+
+    clearBtn.addEventListener('click', ()=>{
+      logs = [];
+      totalReceived = 0;
+      selectedId = null;
+      timestamps.length = 0;
+
+      totalEl.textContent = '0';
+      epsEl.textContent = '0.0';
+      lastEl.textContent = '—';
+      detailPane.textContent = 'No event selected';
+
+      refreshList();
+    });
+
+    pauseBtn.addEventListener('click', ()=>{
+      paused ? startStream() : stopStream();
+    });
+
+    darkToggle.addEventListener('change', (e)=>{
+      document.documentElement.classList.toggle('dark', e.target.checked);
+    });
+
+    jumpBtn.addEventListener('click', ()=>{
+      logsEl.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+
+    searchInput.addEventListener('input', refreshList);
+
+    levelBtns.forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        levelBtns.forEach(b=>b.classList.remove('active'));
+        btn.classList.add('active');
+        activeLevel = btn.dataset.level;
+        refreshList();
+      });
+    });
+
+    // EPS updater: every 500ms compute events in last 10s / 10
+    setInterval(()=>{
+      const now = Date.now();
+      while(timestamps.length && (now - timestamps[0]) > 10000) timestamps.shift();
+      epsEl.textContent = (timestamps.length / 10).toFixed(1);
+    }, 500);
+
+    // init
+    refreshList();
+    startStream();
+  </script>
+</body>
+</html>

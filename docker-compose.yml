@@ -1,0 +1,26 @@
+version: '3.8'
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  producer:
+    build: ./producer
+    ports:
+      - "3000:3000"
+    environment:
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - ./dashboard:/app/dashboard:ro
+    depends_on:
+      - redis
+
+  worker:
+    build: ./worker
+    environment:
+      - REDIS_URL=redis://redis:6379
+      # BENCHMARK_MODE removed
+    depends_on:
+      - redis
+    command: sh -c "WORKER_ID=$(hostname) node src/index.js"
